@@ -8,7 +8,7 @@
 
 #include "mySSID.h"
 
-//#define USE_WIFI
+#define USE_WIFI
 
 #define PIN D8
 #define N_PIXELS  8
@@ -59,16 +59,26 @@ void setup()
 
 //  pixels.setBrightness(32);
 
+  pixels.setPixelColor(0, pixels.Color(0,0,255));
+  pixels.show();
+ 
 #ifdef USE_WIFI
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   while (WiFi.waitForConnectResult() != WL_CONNECTED) {
     Serial.println("Connection Failed! Rebooting...");
+    pixels.setPixelColor(0, pixels.Color(255,0,0));
+    pixels.show();
     delay(5000);
+    pixels.setPixelColor(0, pixels.Color(0,0,0));
+    pixels.show();
     ESP.restart();
   }
   Serial.println(WiFi.localIP());
 
+  pixels.setPixelColor(0, pixels.Color(0,255,0));
+  pixels.show();
+  
   Serial.println();
 
   if( WiFi.status() == WL_CONNECTED ) {
@@ -132,7 +142,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.println();
 #endif
 
-  if( strncmp(topic, "powermeter/phase",16) != 0) {
+  if( strncmp(topic, "powermeter/phase", 16) != 0) {
     return;
   }
   
