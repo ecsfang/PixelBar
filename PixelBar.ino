@@ -165,12 +165,16 @@ void loop()
 #define min(a,b) (a<b)?(a):(b)
 #define max(a,b) (a>b)?(a):(b)
 
-#define MAX_VAL 20.0
+#define MIN_VAL 5.0   // 5 amps gives green light
+#define MAX_VAL 20.0  // 20 amp gives red ...
 
 void phaseColor(int delayValue)
 {
   for( int f=0; f<3; f++) {
-    float x = min(amp[f]/MAX_VAL, 1);  // Value from 0 -> 1
+    float a = min(max(amp[f], MIN_VAL), MAX_VAL); // MIN -> MAX
+    float x = a/(MAX_VAL-MIN_VAL);  // Value from 0 -> 1
+
+    // Make color from green to red (min -> max)
     pixBar[f].red   = 2.0 * x;
     pixBar[f].green = 2.0 * (1-x);
 
