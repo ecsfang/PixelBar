@@ -6,13 +6,10 @@
 #include <PubSubClient.h>
 #include <Adafruit_NeoPixel.h>
 
+#include "mySSID.h"
+
 #define PIN D8
 #define N_PIXELS  8
-
-const char* ssid = "AN_SSID";
-const char* password = "A_PASSWORD";
-const char* mqtt_server = "A_SERVER";
-const char* flashpw = "A_FLASHPW";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
