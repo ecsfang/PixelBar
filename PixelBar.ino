@@ -8,8 +8,14 @@
 
 #include "mySSID.h"
 
+//#define USE_WIFI
+
 #define PIN D8
 #define N_PIXELS  8
+
+unsigned long BLINK_TIME = 500; // 0.5 sec
+unsigned long blinkStart = 0; // the time the delay started
+bool blinkRunning = false; // true if still waiting for delay to finish
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -26,21 +32,34 @@ typedef struct {
 RGB_t pixBar[N_PIXELS];
 
 float amp[3];
+bool  blink[3];
 
 int fas[3];
 int fass[3];
+uint32_t  fColor[3];
 
 bool bUpdate = true;
 
 void setup() 
 {
+  Serial.begin(115200);
   pixels.begin(); // This initializes the NeoPixel library.
   randomSeed(analogRead(0));
   memset(pixBar, 0, sizeof(RGB_t)*N_PIXELS);
-  fas[0] = fas[1] = fas[2] = 0;
-  fass[0] = fass[1] = fass[2] = 1;
-  pixels.setBrightness(32);
+  
+  for(int f=0; f<3; f++) {
+    fas[f] = 0;
+    fass[f] = 1;
+    blink[f] = false;
+    fColor[f] = 0;
+  }
 
+  blinkStart = millis();
+  blinkRunning = true;  
+
+//  pixels.setBrightness(32);
+
+#ifdef USE_WIFI
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   while (WiFi.waitForConnectResult() != WL_CONNECTED) {
@@ -94,6 +113,7 @@ void setup()
   
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
+#endif
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -148,8 +168,21 @@ void reconnect() {
   }
 }
 
+void simulateAmp()
+{
+  for(int f=0;f<3;f++) {
+    amp[f] += fass[f]*random(0,100*(f+1))/500.0;
+    if( amp[f] > 25.0 ) fass[f] = -1;
+    if( amp[f] < 0.0 ) fass[f] = 1;
+  }
+  bUpdate = true;
+}
+
+bool ledOn = false;
+
 void loop() 
 {
+#ifdef USE_WIFI
   if (!client.connected())
     reconnect();
 
@@ -157,9 +190,24 @@ void loop()
     client.loop();
     ArduinoOTA.handle();
   }
-
+#else
+  simulateAmp();
+#endif
   if( bUpdate )
     phaseColor(100);
+
+  if (blinkRunning && ((millis() - blinkStart) >= BLINK_TIME)) {
+    blinkStart += BLINK_TIME; // this prevents drift in the delays
+    // toggle the led
+    ledOn = !ledOn;
+    for( int f=0; f<3; f++) {
+      if( blink[f] ) {
+        pixels.setPixelColor((f*3)+0, ledOn ? fColor[f] : 0);
+        pixels.setPixelColor((f*3)+1, ledOn ? 0 : fColor[f]);
+      }        
+    }
+    pixels.show();
+  }
 }
  
 #define min(a,b) (a<b)?(a):(b)
@@ -171,18 +219,28 @@ void loop()
 void phaseColor(int delayValue)
 {
   for( int f=0; f<3; f++) {
-    float a = min(max(amp[f], MIN_VAL), MAX_VAL); // MIN -> MAX
-    float x = a/(MAX_VAL-MIN_VAL);  // Value from 0 -> 1
+    float a = max(amp[f], MIN_VAL); // MIN -> MAX
+    a = min(a, MAX_VAL); // MIN -> MAX
+    float x = (a-MIN_VAL)/(MAX_VAL-MIN_VAL);  // Value from 0 -> 1
 
+    blink[f] = amp[f] > MAX_VAL;
+    
     // Make color from green to red (min -> max)
     pixBar[f].red   = 2.0 * x;
     pixBar[f].green = 2.0 * (1-x);
 
-    int r = min(max(int(pixBar[f].red*255),0), 255);
-    int g = min(max(int(pixBar[f].green*255),0), 255);
- 
-    pixels.setPixelColor((f*3)+0, pixels.Color(r,g,0));
-    pixels.setPixelColor((f*3)+1, pixels.Color(r,g,0));
+    int r = min(int(pixBar[f].red*255), 255);
+    int g = min(int(pixBar[f].green*255), 255);
+
+    fColor[f] = pixels.Color(r,g,0);
+
+    if( blink[f] ) {
+      pixels.setPixelColor((f*3)+0, ledOn ? fColor[f] : 0);
+      pixels.setPixelColor((f*3)+1, ledOn ? 0 : fColor[f]);
+    } else {
+      pixels.setPixelColor((f*3)+0, fColor[f]);
+      pixels.setPixelColor((f*3)+1, fColor[f]);
+    }
   }
   
   pixels.show();
