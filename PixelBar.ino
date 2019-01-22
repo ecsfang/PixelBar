@@ -209,18 +209,19 @@ void loop()
     client.loop();
     ArduinoOTA.handle();
   }
+  if( bUpdate )
+    phaseColor(0);
 #else
   simulateAmp();
+  phaseColor(100);
 #endif
-  if( bUpdate )
-    phaseColor(100);
 
 #define HALF_SECOND 0x02
 #define SECOND      0x04
 
   if (blinkRunning && ((millis() - blinkStart) >= BLINK_TIME)) {
     blinkStart += BLINK_TIME; // this prevents drift in the delays
-    // toggle the led
+
     for( int f=0; f<3; f++) {
       // Check if any led should blink ... then do so!
       if( blink[f] != NO_BLINK ) {
@@ -311,5 +312,6 @@ void phaseColor(int delayValue)
   }
   
   updatePixels();
-  delay(delayValue);
+  if( delayValue )
+    delay(delayValue);
 }
