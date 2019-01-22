@@ -13,7 +13,7 @@
 #define PIN D8
 #define N_PIXELS  8
 
-unsigned long BLINK_TIME = 500; // 0.5 sec
+unsigned long BLINK_TIME = 250; // 1/4 sec
 unsigned long blinkStart = 0; // the time the delay started
 bool blinkRunning = false; // true if still waiting for delay to finish
 
@@ -32,11 +32,22 @@ typedef struct {
 RGB_t pixBar[N_PIXELS];
 
 float amp[3];
-bool  blink[3];
+
+typedef enum {
+  NO_BLINK,
+  BLINK,
+  FAST_BLINK
+} Blink_e;
+
+Blink_e blink[3];
+int     blinkPeriod = 0;
 
 int fas[3];
 int fass[3];
 uint32_t  fColor[3];
+
+uint32_t  oldColor[N_PIXELS];
+uint32_t  newColor[N_PIXELS];
 
 bool bUpdate = true;
 
@@ -50,14 +61,14 @@ void setup()
   for(int f=0; f<3; f++) {
     fas[f] = 0;
     fass[f] = 1;
-    blink[f] = false;
+    blink[f] = NO_BLINK;
     fColor[f] = 0;
   }
 
   blinkStart = millis();
   blinkRunning = true;  
 
-//  pixels.setBrightness(32);
+  pixels.setBrightness(32);
 
   pixels.setPixelColor(0, pixels.Color(0,0,255));
   pixels.show();
@@ -182,13 +193,11 @@ void simulateAmp()
 {
   for(int f=0;f<3;f++) {
     amp[f] += fass[f]*random(0,100*(f+1))/500.0;
-    if( amp[f] > 25.0 ) fass[f] = -1;
+    if( amp[f] > 30.0 ) fass[f] = -1;
     if( amp[f] < 0.0 ) fass[f] = 1;
   }
   bUpdate = true;
 }
-
-bool ledOn = false;
 
 void loop() 
 {
@@ -206,17 +215,24 @@ void loop()
   if( bUpdate )
     phaseColor(100);
 
+#define HALF_SECOND 0x02
+#define SECOND      0x04
+
   if (blinkRunning && ((millis() - blinkStart) >= BLINK_TIME)) {
     blinkStart += BLINK_TIME; // this prevents drift in the delays
     // toggle the led
-    ledOn = !ledOn;
     for( int f=0; f<3; f++) {
-      if( blink[f] ) {
-        pixels.setPixelColor((f*3)+0, ledOn ? fColor[f] : 0);
-        pixels.setPixelColor((f*3)+1, ledOn ? 0 : fColor[f]);
-      }        
+      // Check if any led should blink ... then do so!
+      if( blink[f] != NO_BLINK ) {
+        setPhaseColor(f, fColor[f]);
+        bUpdate = true;
+      }
     }
-    pixels.show();
+    if( bUpdate ) {
+      pixels.show();
+      bUpdate = false;
+    }
+    blinkPeriod++;
   }
 }
  
@@ -224,7 +240,42 @@ void loop()
 #define max(a,b) (a>b)?(a):(b)
 
 #define MIN_VAL 5.0   // 5 amps gives green light
-#define MAX_VAL 20.0  // 20 amp gives red ...
+#define MAX_VAL 25.0  // 25 amp gives red ...
+#define WARN_VAL 20.0 // 20.0 amp gives blinking red ...
+#define CRIT_VAL 22.5 // 22.5 amp gives fast blinking red ...
+
+void setPixelColor(int l, uint32_t c)
+{
+  newColor[l] = c;
+  pixels.setPixelColor(l, c);
+}
+
+void setPhaseColor(int f, uint32_t c)
+{
+  switch( blink[f] ) {
+    case NO_BLINK:
+      setPixelColor((f*3)+0, c);
+      setPixelColor((f*3)+1, c);
+      break;
+    case BLINK: // Normal blink 1 Hz ...
+      setPixelColor((f*3)+0, blinkPeriod & SECOND ? c : 0);
+      setPixelColor((f*3)+1, blinkPeriod & SECOND ? 0 : c);
+      break;
+    case FAST_BLINK: // Blink 2 Hz ...
+      setPixelColor((f*3)+0, blinkPeriod & HALF_SECOND ? c : 0);
+      setPixelColor((f*3)+1, blinkPeriod & HALF_SECOND ? c : 0);
+      break;
+  }
+}
+
+void updatePixels(void)
+{
+  if( memcmp(oldColor, newColor, sizeof(uint32_t)*N_PIXELS) ) {
+    pixels.show();
+    memcpy(oldColor, newColor, sizeof(uint32_t)*N_PIXELS);
+  }
+  bUpdate = false;
+}
 
 void phaseColor(int delayValue)
 {
@@ -233,27 +284,32 @@ void phaseColor(int delayValue)
     a = min(a, MAX_VAL); // MIN -> MAX
     float x = (a-MIN_VAL)/(MAX_VAL-MIN_VAL);  // Value from 0 -> 1
 
-    blink[f] = amp[f] > MAX_VAL;
+    blink[f] = NO_BLINK;
+    if( amp[f] > WARN_VAL ) blink[f] = BLINK;
+    if( amp[f] > CRIT_VAL ) blink[f] = FAST_BLINK;
     
     // Make color from green to red (min -> max)
-    pixBar[f].red   = 2.0 * x;
-    pixBar[f].green = 2.0 * (1-x);
+    if( amp[f] < MIN_VAL ) {
+      a = max(amp[f], 0); // 0 -> MIN
+      x = a/MIN_VAL;  // Value from 0 -> 1
+      pixBar[f].red   = 0;
+      pixBar[f].green = 2.0 * x;
+      pixBar[f].blue  = 2.0 * (1-x);
+    } else {
+      pixBar[f].red   = 2.0 * x;
+      pixBar[f].green = 2.0 * (1-x);
+      pixBar[f].blue  = 0;
+    }
 
     int r = min(int(pixBar[f].red*255), 255);
     int g = min(int(pixBar[f].green*255), 255);
+    int b = min(int(pixBar[f].blue*255), 255);
 
-    fColor[f] = pixels.Color(r,g,0);
+    fColor[f] = pixels.Color(r,g,b);
 
-    if( blink[f] ) {
-      pixels.setPixelColor((f*3)+0, ledOn ? fColor[f] : 0);
-      pixels.setPixelColor((f*3)+1, ledOn ? 0 : fColor[f]);
-    } else {
-      pixels.setPixelColor((f*3)+0, fColor[f]);
-      pixels.setPixelColor((f*3)+1, fColor[f]);
-    }
+    setPhaseColor(f, fColor[f]);
   }
   
-  pixels.show();
-  bUpdate = false;
+  updatePixels();
   delay(delayValue);
 }
