@@ -21,7 +21,7 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 
 //the Wemos WS2812B RGB shield has 1 LED connected to pin 2
-Adafruit_NeoPixel pixels = Adafruit_NeoPixel(8, PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(N_PIXELS, PIN, NEO_GRB + NEO_KHZ800);
  
 typedef struct {
   float red;
@@ -76,7 +76,27 @@ void setup()
 #ifdef USE_WIFI
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+
+  int f = 0;
+  int dir = 1;
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(200);
+    pixels.setPixelColor(f, 0);
+    pixels.setPixelColor(f+=dir, pixels.Color(0,0,255));
+    if( f == (N_PIXELS-1) || f == 0 ) dir = -dir;
+    pixels.show();
+    if ((millis() - blinkStart) > 10000) {
+      Serial.println("Connection Failed! Rebooting...");
+      pixels.setPixelColor(f, 0);
+      pixels.setPixelColor(3, pixels.Color(255,0,0));
+      pixels.setPixelColor(4, pixels.Color(255,0,0));
+      pixels.show();
+      delay(1000);
+      ESP.restart();
+    }
+  }
+
+/*  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
     Serial.println("Connection Failed! Rebooting...");
     pixels.setPixelColor(0, pixels.Color(255,0,0));
     pixels.show();
@@ -84,7 +104,8 @@ void setup()
     pixels.setPixelColor(0, pixels.Color(0,0,0));
     pixels.show();
     ESP.restart();
-  }
+  }**/
+
   Serial.println(WiFi.localIP());
 
   pixels.setPixelColor(0, pixels.Color(0,255,0));
