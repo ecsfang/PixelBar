@@ -12,6 +12,7 @@
 
 #define PIN D8
 #define N_PIXELS  8
+#define N_PHASES  3
 
 #define PULSE_TIME 250 // Heartbeat - 250ms = 1/4 sec
 
@@ -29,7 +30,7 @@ typedef struct {
   float blue; 
 } RGB_t;
 
-float amp[3];
+float amp[N_PHASES];
 
 typedef enum {
   NO_BLINK,
@@ -37,11 +38,11 @@ typedef enum {
   FAST_BLINK
 } Blink_e;
 
-Blink_e blink[3];
+Blink_e blink[N_PHASES];
 int     blinkPeriod = 0;
 
 // Current color of each phase ...
-uint32_t  fColor[3];
+uint32_t  fColor[N_PHASES];
 
 // Previous and current color of each led ...
 uint32_t  oldColor[N_PIXELS];
@@ -49,28 +50,8 @@ uint32_t  newColor[N_PIXELS];
 
 bool bUpdate = true;
 
-void setup() 
+void networkSetup(void)
 {
-  Serial.begin(115200);
-  pixels.begin(); // This initializes the NeoPixel library.
-  randomSeed(analogRead(0));
-  
-  for(int f=0; f<3; f++) {
-    blink[f] = NO_BLINK;
-    fColor[f] = 0;
-  }
-
-  blinkStart = millis();
-  blinkRunning = true;  
-
-  pixels.setBrightness(32);
-  pixels.setPixelColor(0, pixels.Color(0,0,255));
-  pixels.show();
- 
-#ifdef USE_WIFI
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-
   int f = 0;
   int dir = 1;
   while (WiFi.status() != WL_CONNECTED) {
@@ -89,29 +70,43 @@ void setup()
       ESP.restart();
     }
   }
-
-/*  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    Serial.println("Connection Failed! Rebooting...");
-    pixels.setPixelColor(0, pixels.Color(255,0,0));
-    pixels.show();
-    delay(5000);
-    pixels.setPixelColor(0, pixels.Color(0,0,0));
-    pixels.show();
-    ESP.restart();
-  }**/
-
   Serial.println(WiFi.localIP());
 
   pixels.setPixelColor(0, pixels.Color(0,255,0));
   pixels.show();
   
   Serial.println();
+}
+
+void setup()
+{
+  Serial.begin(115200);
+  pixels.begin(); // This initializes the NeoPixel library.
+  randomSeed(analogRead(0));
+
+  for(int f=0; f<N_PHASES; f++) {
+    blink[f] = NO_BLINK;
+    fColor[f] = 0;
+  }
+
+  blinkStart = millis();
+  blinkRunning = true;
+
+  pixels.setBrightness(32);
+  pixels.setPixelColor(0, pixels.Color(0,0,255));
+  pixels.show();
+
+#ifdef USE_WIFI
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  networkSetup();
 
   if( WiFi.status() == WL_CONNECTED ) {
 
     ArduinoOTA.setHostname("PhaseDisplay");
     ArduinoOTA.setPassword(flashpw);
-  
+
     ArduinoOTA.onStart([]() {
       String type;
       if (ArduinoOTA.getCommand() == U_FLASH) {
@@ -176,7 +171,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   //01234567890123456
   int n = topic[16]-'1';
 
-  if( n>=0 && n < 3 ) {
+  if( n>=0 && n < N_PHASES ) {
     String sTemp = String((char*)payload);
     amp[n] = sTemp.toFloat();
     bUpdate = true;
@@ -206,9 +201,9 @@ void reconnect() {
 
 void simulateAmp()
 {
-  static int fass[3] = {1,1,1};
+  static int fass[N_PHASES] = {1,1,1};
 
-  for(int f=0;f<3;f++) {
+  for(int f=0;f<N_PHASES;f++) {
     amp[f] += fass[f]*random(0,100*(f+1))/500.0;
     if( amp[f] > 30.0 ) fass[f] = -1;
     if( amp[f] < 0.0 ) fass[f] = 1;
@@ -219,6 +214,9 @@ void simulateAmp()
 void loop() 
 {
 #ifdef USE_WIFI
+  if ( WiFi.status() != WL_CONNECTED )
+    networkSetup();
+
   if (!client.connected())
     reconnect();
 
@@ -239,7 +237,7 @@ void loop()
   if (blinkRunning && ((millis() - blinkStart) >= PULSE_TIME)) {
     blinkStart += PULSE_TIME; // this prevents drift in the delays
 
-    for( int f=0; f<3; f++) {
+    for( int f=0; f<N_PHASES; f++) {
       // Check if any led should blink ... then do so!
       if( blink[f] != NO_BLINK ) {
         setPhaseColor(f, fColor[f]);
@@ -270,7 +268,7 @@ void setPixelColor(int l, uint32_t c)
 
 void setPhaseColor(int f, uint32_t c)
 {
-  int led = f*3;
+  int led = f*3; // Three leds for each phase, use the two first only ...
   switch( blink[f] ) {
     case NO_BLINK:
       setPixelColor(led+0, c);
@@ -305,7 +303,7 @@ void phaseColor(int delayValue)
   RGB_t pixColor;
   float a, x;
 
-  for( int f=0; f<3; f++) {
+  for( int f=0; f<N_PHASES; f++) {
     if( amp[f] > CRIT_VAL )
       blink[f] = FAST_BLINK;
     else if( amp[f] > WARN_VAL )
