@@ -72,7 +72,7 @@ void networkSetup(void)
   }
   Serial.println(WiFi.localIP());
 
-  pixels.setPixelColor(0, pixels.Color(0,255,0));
+  pixels.clear();
   pixels.show();
   
   Serial.println();
