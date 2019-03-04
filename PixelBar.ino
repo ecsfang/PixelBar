@@ -49,27 +49,45 @@ uint32_t  oldColor[N_PIXELS];
 uint32_t  newColor[N_PIXELS];
 
 bool bUpdate = true;
+#define RED       0xFF0000
+#define GREEN     0x00FF00
+#define LAWNGREEN 0x7CFC00
+#define BLUE      0x0000FF
+#define ORANGE    0xFFA500
 
 void networkSetup(void)
 {
-  int f = 0;
-  int dir = 1;
+  int f = 0;    // Which led to show next ...
+  int dir = 1;  // Direction of flowing light ...
+
+  blinkStart = millis();
+  pixels.clear();
+  pixels.show();
+
   while (WiFi.status() != WL_CONNECTED) {
     delay(200);
     pixels.setPixelColor(f, 0);
-    pixels.setPixelColor(f+=dir, pixels.Color(0xFF, 0xC0, 0x00));
-    if( f == (N_PIXELS-1) || f == 0 ) dir = -dir;
+    f+=dir;
+    pixels.setPixelColor(f, ORANGE);
     pixels.show();
+    if( f == (N_PIXELS-1) || f == 0 ) dir = -dir;
     if ((millis() - blinkStart) > 10000) {
       Serial.println("Connection Failed! Rebooting...");
-      pixels.setPixelColor(f, 0);
-      pixels.setPixelColor(3, pixels.Color(0x7e, 0xD3, 0x21));
-      pixels.setPixelColor(4, pixels.Color(0x7e, 0xD3, 0x21));
+      pixels.clear();
+      pixels.setPixelColor(3, RED);
+      pixels.setPixelColor(4, RED);
       pixels.show();
       delay(1000);
       ESP.restart();
     }
   }
+
+  pixels.clear();
+  pixels.setPixelColor(3, LAWNGREEN);
+  pixels.setPixelColor(4, LAWNGREEN);
+  pixels.show();
+  delay(1000);
+
   Serial.println(WiFi.localIP());
 
   pixels.clear();
@@ -81,7 +99,6 @@ void networkSetup(void)
 void setup()
 {
   Serial.begin(115200);
-  pixels.begin(); // This initializes the NeoPixel library.
   randomSeed(analogRead(0));
 
   for(int f=0; f<N_PHASES; f++) {
@@ -94,15 +111,14 @@ void setup()
   blinkStart = millis();
   blinkRunning = true;
 
+  pixels.begin(); // This initializes the NeoPixel library.
   pixels.setBrightness(32);
-  pixels.setPixelColor(0, pixels.Color(0,0,255));
-  pixels.show();
 
 #ifdef USE_WIFI
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
 
-  networkSetup();
+  networkSetup(); // Find WiFi and blink some leds while searching ...
 
   if( WiFi.status() == WL_CONNECTED ) {
 
@@ -146,6 +162,9 @@ void setup()
   
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
+#else
+  pixels.setPixelColor(0, BLUE);
+  pixels.show();
 #endif
 }
 
@@ -173,10 +192,14 @@ void callback(char* topic, byte* payload, unsigned int length) {
   //01234567890123456
   int n = topic[16]-'1';
 
+#define ABS(x) ((x)<0 ? -(x):(x))
+
   if( n>=0 && n < N_PHASES ) {
-    String sTemp = String((char*)payload);
-    amp[n] = sTemp.toFloat();
-    bUpdate = true;
+    float newAmp = String((char*)payload).toFloat();
+    if( ABS(newAmp-amp[n]) > 0.1 ) {
+      amp[n] = newAmp;
+      bUpdate = true;
+    }
   }
 }
 
@@ -225,10 +248,14 @@ void loop()
 
   if (client.connected()) {
     client.loop();
-    ArduinoOTA.handle();
   }
-  if( bUpdate )
+
+  ArduinoOTA.handle();
+
+  if( bUpdate ) {
+    // Refresh leds if new values has arrived ...
     phaseColor(0);
+  }
 #else
   simulateAmp();
   phaseColor(100);
@@ -250,10 +277,11 @@ void loop()
         bUpdate = true;
       }
     }
-    if( bUpdate ) {
+
+    if( bUpdate )
       pixels.show();
-      bUpdate = false;
-    }
+
+    bUpdate = false;
     blinkPeriod++;
   }
 }
