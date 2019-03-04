@@ -10,7 +10,7 @@
 
 #define USE_WIFI
 
-#define PIN D8
+#define PIN       D8
 #define N_PIXELS  8
 #define N_PHASES  3
 
@@ -57,14 +57,14 @@ void networkSetup(void)
   while (WiFi.status() != WL_CONNECTED) {
     delay(200);
     pixels.setPixelColor(f, 0);
-    pixels.setPixelColor(f+=dir, pixels.Color(0,0,255));
+    pixels.setPixelColor(f+=dir, pixels.Color(0xFF, 0xC0, 0x00));
     if( f == (N_PIXELS-1) || f == 0 ) dir = -dir;
     pixels.show();
     if ((millis() - blinkStart) > 10000) {
       Serial.println("Connection Failed! Rebooting...");
       pixels.setPixelColor(f, 0);
-      pixels.setPixelColor(3, pixels.Color(255,0,0));
-      pixels.setPixelColor(4, pixels.Color(255,0,0));
+      pixels.setPixelColor(3, pixels.Color(0x7e, 0xD3, 0x21));
+      pixels.setPixelColor(4, pixels.Color(0x7e, 0xD3, 0x21));
       pixels.show();
       delay(1000);
       ESP.restart();
@@ -88,6 +88,8 @@ void setup()
     blink[f] = NO_BLINK;
     fColor[f] = 0;
   }
+
+  pinMode(BUILTIN_LED, OUTPUT);
 
   blinkStart = millis();
   blinkRunning = true;
@@ -213,6 +215,7 @@ void simulateAmp()
 
 void loop() 
 {
+  static int bLed = 0;
 #ifdef USE_WIFI
   if ( WiFi.status() != WL_CONNECTED )
     networkSetup();
@@ -236,6 +239,9 @@ void loop()
 
   if (blinkRunning && ((millis() - blinkStart) >= PULSE_TIME)) {
     blinkStart += PULSE_TIME; // this prevents drift in the delays
+
+    digitalWrite(BUILTIN_LED, (bLed & 0x0F) == 0 ? LOW : HIGH);
+    bLed++;
 
     for( int f=0; f<N_PHASES; f++) {
       // Check if any led should blink ... then do so!
